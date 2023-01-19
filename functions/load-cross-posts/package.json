@@ -1,0 +1,15 @@
+{
+  "name": "load-cross-posts",
+  "version": "1.0.0",
+  "description": "Bootstrap your existing articles into the database",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "allenheltondev",
+  "license": "ISC",
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.229.0",
+    "@aws-sdk/util-dynamodb": "^3.229.0"
+  }
+}
