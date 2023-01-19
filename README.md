@@ -17,6 +17,8 @@ For cross-posts to work successfully, there are a few prereqs that must be met i
 * You have an application in [AWS Amplify](https://aws.amazon.com/amplify/) that has a runnable CI pipeline
 * Blog posts have front matter in the format outlined in the [Blog Metadata](#blog-metadata) section
 
+*Note - it is highly recommended you host your blog on your own site. This guarantees you own your content and prevents accidental loss if your favorite platform goes down or has an incident. It also enables [easy canonification](https://support.google.com/webmasters/answer/10347851) of your content when it is cross posted so it ranks higher in search engine results. For a step by step guide on hosting your own blog for free, please [reference this post](https://www.readysetcloud.io/blog/allen.helton/how-to-build-your-blog-with-aws-and-hugo/).*
+
 ## How It Works
 
 ![](/docs/workflow.png)
@@ -38,11 +40,13 @@ The cross posting process is outlined below.
 
 This solution will take content you create and automatically cross-post it on three platforms:
 
-* [Medium](https://medium.com)
-* [Dev.to](https://dev.to)
-* [Hashnode](https://hashnode.com)
+* [Medium](https://medium.com) - *[generate API Key](https://help.medium.com/hc/en-us/articles/213480228-Get-an-integration-token-for-your-writing-app)*
+* [Dev.to](https://dev.to) - *[generate API Key](https://dev.to/settings/extensions)*
+* [Hashnode](https://hashnode.com) - *[generate API Key](https://hashnode.com/settings/developer)*
 
+You are required to have an account on all three platforms and must generate an API key for each of them. 
 
+Optionally, you can publish straight to publications on each of the platforms. If there is a specific organization on Dev.to or publication on Medium or Hashnode you typically write for, you can fill out `DevOrganizationId`, `MediumPublicationId`, and `HashnodePublicationId` deployment variables respectively. For example, you could automatically submit your story to the [AWS Community Builders](https://dev.to/aws-builders) organization on dev.to instead of under your name.
 
 ## Deployment
 
@@ -88,7 +92,7 @@ If you wish to get notification emails on the status of the cross posting, you m
 
 Once you perform the above actions, you may use the values in the respective deployment variables listed above.
 
-## Replay
+## Replay / Idempotency
 
 In the event the cross-posting does not work, it can be safely retried without worrying about pushing your content multiple times. Each post will update the idempotency DynamoDB record for the cross-posting state machine. This record holds the status (*success/failure*) for each platform. If the article was successfully posted on a platform, it will be skipped on subsequent executions.
 

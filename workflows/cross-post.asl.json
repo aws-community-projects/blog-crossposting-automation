@@ -769,7 +769,31 @@
         }
       },
       "ResultPath": null,
-      "Next": "Send Failure Email"
+      "Next": "Should Send Failure Email?"
+    },
+    "Should Send Failure Email?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$$.Execution.Input.sendStatusEmail",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$$.Execution.Input.sendStatusEmail",
+              "BooleanEquals": true
+            }
+          ],
+          "Next": "Send Failure Email"
+        }
+      ],
+      "Default": "Something Went Wrong"
+    },
+    "Something Went Wrong": {
+      "Type": "Fail",
+      "Error": "PublishError",
+      "Cause": "An error occurred publishing to one or more sites"
     },
     "Send Failure Email": {
       "Type": "Task",
@@ -787,7 +811,7 @@
           }
         ]
       },
-      "End": true
+      "Next": "Something Went Wrong"
     },
     "Format Catalog Article": {
       "Type": "Pass",
@@ -801,7 +825,7 @@
     },
     "Save Records": {
       "Type": "Parallel",
-      "Next": "Send Success Email",
+      "Next": "Should Send Success Email?",
       "Branches": [
         {
           "StartAt": "Save Catalog Article",
@@ -880,6 +904,25 @@
         }
       ],
       "ResultPath": null
+    },
+    "Should Send Success Email?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$$.Execution.Input.sendStatusEmail",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$$.Execution.Input.sendStatusEmail",
+              "BooleanEquals": true
+            }
+          ],
+          "Next": "Send Success Email"
+        }
+      ],
+      "Default": "Success"
     },
     "Send Success Email": {
       "Type": "Task",
