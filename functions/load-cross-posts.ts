@@ -1,9 +1,9 @@
-const { PutItemCommand, DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { marshall } = require('@aws-sdk/util-dynamodb');
+import { PutItemCommand, DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { marshall } from '@aws-sdk/util-dynamodb';
 
-const ddb = new DynamoDBClient();
+const ddb = new DynamoDBClient({});
 
-exports.handler = async (event) => {
+export const handler = async () => {
   try {
     const data = getData();
     await Promise.allSettled(data.map(async (item) => {
@@ -14,7 +14,7 @@ exports.handler = async (event) => {
   }
 };
 
-const addToDb = async (item) => {
+const addToDb = async (item: { title: any; devUrl: any; url: any; mediumUrl: any; hashnodeUrl: any; }) => {
   await ddb.send(new PutItemCommand({
     TableName: process.env.TABLE_NAME,
     Item: marshall({

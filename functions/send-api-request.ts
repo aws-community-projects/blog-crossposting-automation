@@ -1,8 +1,8 @@
-const axios = require('axios').default;
-const shared = require('/opt/nodejs/index');
+import axios  from 'axios';
+import { getSecret } from './utils/secrets';
 
-exports.handler = async (state) => {
-  const authToken = await shared.getSecret(state.secretKey);
+export const handler = async (state: { secretKey: any; request: { method: any; baseUrl: any; headers: any; body: any; query: ArrayLike<unknown> | { [s: string]: unknown; }; }; auth: { prefix: any; location: string; key: string | number; }; }) => {
+  const authToken = await getSecret(state.secretKey);
   if (!authToken) {
     throw new Error('Unable to get secret');
   }
@@ -12,14 +12,14 @@ exports.handler = async (state) => {
   return response.data;
 };
 
-const getAxiosConfig = (state, authToken) => {
+const getAxiosConfig = (state: { request: { method: any; baseUrl: any; headers: any; body: any; query: { [s: string]: unknown; } | ArrayLike<unknown>; }; auth: { prefix: any; location: string; key: string | number; }; }, authToken: string) => {
   const config = {
     method: state.request.method,
     baseURL: state.request.baseUrl,
     headers: state.request.headers ?? {},
     ...state.request.body && { data: state.request.body },
     responseType: 'json',
-    validateStatus: (status) => status < 400
+    validateStatus: (status: number) => status < 400
   };
 
   let authValue = authToken;

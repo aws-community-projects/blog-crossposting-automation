@@ -1,6 +1,6 @@
 const frontmatter = require('@github-docs/frontmatter');
 
-exports.handler = async (state) => {
+export const handler = async (state: { post: any; format: string; articleCatalog: any; }) => {
   const details = frontmatter(state.post);
   const links = getLinks(details.content);
   const tweets = getTweets(details.content);
@@ -23,7 +23,7 @@ exports.handler = async (state) => {
   };
 };
 
-const formatMediumData = (postDetail, articleCatalog, links, tweets) => {
+const formatMediumData = (postDetail: { data: { title: any; description: any; image_attribution: any; image: any; categories: any; tags: any; slug: string; }; content: string | any[]; }, articleCatalog: any[], links: any, tweets: any) => {
   let mediumContent = `\n# ${postDetail.data.title}\n`
     + `#### ${postDetail.data.description}\n`
     + `![${postDetail.data.image_attribution ?? ''}](${postDetail.data.image})\n`
@@ -58,7 +58,7 @@ const formatMediumData = (postDetail, articleCatalog, links, tweets) => {
   return mediumData;
 };
 
-const formatDevData = (postDetail, articleCatalog, links, tweets) => {
+const formatDevData = (postDetail: { content: string; data: { title: any; image: any; slug: string; description: any; categories: any[]; tags: any[]; }; }, articleCatalog: any[], links: any, tweets: any) => {
   let devContent = postDetail.content.slice(0);
   for (const link of links) {
     const replacement = articleCatalog.find(c => c.links.M.url.S == link[1]);
@@ -90,7 +90,7 @@ const formatDevData = (postDetail, articleCatalog, links, tweets) => {
   return { article: devData };
 };
 
-const formatHashnodeData = (postDetail, articleCatalog, links, tweets) => {
+const formatHashnodeData = (postDetail: { content: string; data: { title: any; image: any; slug: string; description: any; }; }, articleCatalog: any[], links: any, tweets: any) => {
   let hashnodeContent = postDetail.content.slice(0);
   for (const link of links) {
     const replacement = articleCatalog.find(c => c.links.M.url.S == link[1]);
@@ -128,16 +128,16 @@ const formatHashnodeData = (postDetail, articleCatalog, links, tweets) => {
   return hashnodeData;
 };
 
-const getLinks = (postContent) => {
+const getLinks = (postContent: string) => {
   const linkMatches = postContent.matchAll(/\(([^\)]*)\)/g);
   return linkMatches;
 };
 
-const getTweets = (postContent) => {
+const getTweets = (postContent: string) => {
   const tweetMatches = postContent.matchAll(/\{\{<tweet user="([a-zA-Z0-9]*)" id="([\d]*)">\}\}/g);
   return tweetMatches;
 };
 
-const getTweetUrl = (tweet) => {
+const getTweetUrl = (tweet: string[]) => {
   return `https://twitter.com/${tweet[1]}/status/${tweet[2]}`;
 }
