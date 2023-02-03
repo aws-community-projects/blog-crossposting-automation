@@ -19,7 +19,7 @@ exports.handler = async (state) => {
   }
   return {
     payload,
-    url: `/${postDetail.data.slug.replace(/^\/|\/$/g, '')}`
+    url: `/${details.data.slug.replace(/^\/|\/$/g, '')}`
   };
 };
 
