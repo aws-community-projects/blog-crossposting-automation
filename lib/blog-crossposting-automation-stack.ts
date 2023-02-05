@@ -21,6 +21,7 @@ export interface BlogCrosspostingAutomationStackProps extends StackProps {
   devTo?: {
     devOrganizationId: string;
   };
+  dryRun?: boolean;
   email?: {
     adminEmail: string;
     sendgridFromEmail: string;
@@ -52,6 +53,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
       blogBaseUrl,
       commitTimeToleranceMinutes,
       devTo,
+      dryRun,
       email,
       github,
       hashnode,
@@ -106,6 +108,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
       ...lambdaProps,
       entry: join(__dirname, `../functions/send-api-request.ts`),
     });
+    sendApiRequestFn.addEnvironment("DRY_RUN", dryRun ? '1' : '0');
     secret.grantRead(sendApiRequestFn);
 
     const loadCrossPostsFn = new NodejsFunction(this, `LoadCrossPostsFn`, {

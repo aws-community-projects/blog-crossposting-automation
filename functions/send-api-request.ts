@@ -8,8 +8,21 @@ export const handler = async (state: { secretKey: any; request: { method: any; b
   }
 
   const config = getAxiosConfig(state, authToken);
-  const response = await axios.request(config);
-  return response.data;
+  if (process.env.DRY_RUN === '1') {
+    return {
+      url: 'someUrl',
+      data: {
+        createPublicationStory: {
+          post: {
+            slug: 'someSlug'
+          }
+        }
+      }
+    };
+  } else {
+    const response = await axios.request(config);
+    return response.data;
+  }
 };
 
 const getAxiosConfig = (state: { request: { method: any; baseUrl: any; headers: any; body: any; query: { [s: string]: unknown; } | ArrayLike<unknown>; }; auth: { prefix: any; location: string; key: string | number; }; }, authToken: string) => {
