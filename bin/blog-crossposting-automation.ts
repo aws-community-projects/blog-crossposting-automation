@@ -1,20 +1,12 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-import { BlogCrosspostingAutomationStack } from '../lib/blog-crossposting-automation-stack';
+import { BlogCrosspostingAutomationStack, BlogCrosspostingAutomationStackProps } from '../lib/blog-crossposting-automation-stack';
 import { App } from 'aws-cdk-lib';
+import config from 'config';
+
+const props: BlogCrosspostingAutomationStackProps = config.get('cdk');
 
 const app = new App();
 new BlogCrosspostingAutomationStack(app, 'BlogCrosspostingAutomationStack', {
-  githubOwner: '',
-  githubRepo: '',
-  amplifyProjectId: '',
-  mediumPublicationId: '',
-  mediumAuthorId: '',
-  devOrganizationId: '',
-  hashnodePublicationId: '',
-  hashnodeBlogUrl: '',
-  blogBaseUrl: '',
-  blogContentPath: '',
-  notificationEmail: '',
-  sendgridFromEmail: '',
+  ...props,
 });

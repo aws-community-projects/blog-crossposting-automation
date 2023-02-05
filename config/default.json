@@ -1,0 +1,30 @@
+{
+  "cdk": {
+    "amplify": {
+      "amplifyProjectId": ""
+    },
+    "blogBaseUrl": "",
+    "commitTimeToleranceMinutes": 0,
+    "devTo": {
+      "devOrganizationId": ""
+    },
+    "email": {
+      "adminEmail": "",
+      "sendgridFromEmail": ""
+    },
+    "github": {
+      "owner": "",
+      "repo": "",
+      "path": ""
+    },
+    "hashnode": {
+      "hashnodePublicationId": "",
+      "hashnodeBlogUrl": ""
+    },
+    "medium": {
+      "mediumPublicationId": "",
+      "mediumAuthorId": ""
+    },
+    "newContentIndicator": ""
+  }
+}

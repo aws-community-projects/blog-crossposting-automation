@@ -1,11 +1,13 @@
 import { Table } from "aws-cdk-lib/aws-dynamodb";
 import {
+  Chain,
   Choice,
   Condition,
   Fail,
   JsonPath,
   Parallel,
   Pass,
+  StateMachine,
   Succeed,
   TaskInput,
 } from "aws-cdk-lib/aws-stepfunctions";
@@ -13,26 +15,47 @@ import {
   CallAwsService,
   DynamoAttributeValue,
   DynamoGetItem,
+  DynamoPutItem,
   DynamoUpdateItem,
-  LambdaInvoke,
+  EventBridgePutEvents,
 } from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Construct } from "constructs";
 import { StepFunctionBranch } from "./step-function-branch";
+import { IEventBus } from "aws-cdk-lib/aws-events";
+import { Duration } from "aws-cdk-lib";
 
 export interface CrossPostStepFunctionProps {
-  table: Table;
-  devTo?: boolean;
-  medium?: boolean;
-  hashnode?: boolean;
-  parsePostFn: NodejsFunction;
+  adminEmail?: string;
+  devTo?: {
+    fn: NodejsFunction;
+  };
+  eventBus: IEventBus;
+  hashnode?: {
+    url: string;
+    fn: NodejsFunction;
+  };
+  medium?: {
+    url: string;
+    fn: NodejsFunction;
+  };
   sendApiRequestFn: NodejsFunction;
+  table: Table;
 }
 export class CrossPostStepFunction extends Construct {
+  stateMachine: StateMachine;
   constructor(scope: Construct, id: string, props: CrossPostStepFunctionProps) {
     super(scope, id);
 
-    const { parsePostFn, sendApiRequestFn, table } = props;
+    const {
+      adminEmail,
+      devTo,
+      eventBus,
+      hashnode,
+      medium,
+      sendApiRequestFn,
+      table,
+    } = props;
     const getExistingArticle = new DynamoGetItem(this, `GetExistingArticle`, {
       table,
       key: {
@@ -65,7 +88,10 @@ export class CrossPostStepFunction extends Construct {
     );
     const successDuplicateRequest = new Succeed(
       this,
-      `SuccessDuplicateRequest`
+      `SuccessDuplicateRequest`,
+      {
+        comment: "This article has already been processed",
+      }
     );
     const hasArticleBeenProcessed = new Choice(this, `HasArticleBeenProcessed`);
     hasArticleBeenProcessed.when(
@@ -124,68 +150,75 @@ export class CrossPostStepFunction extends Construct {
     loadArticleCatalog.addCatch(updateArticleRecordFailure);
 
     // PARALLEL
-    const devTo = new StepFunctionBranch(this, `Dev`, {
-      parsePostFn,
-      publishPayload: TaskInput.fromObject({
-        secretKey: "dev",
-        auth: {
-          location: "header",
-          key: "api-key",
-        },
-        request: {
-          method: "POST",
-          headers: {
-            accept: "application/vnd.forem.api-v1+json",
+    const parallel = new Parallel(this, "TransformAndPublish");
+    if (devTo) {
+      const devToBranch = new StepFunctionBranch(this, `Dev`, {
+        parsePostFn: devTo.fn,
+        publishPayload: TaskInput.fromObject({
+          secretKey: "dev",
+          auth: {
+            location: "header",
+            key: "api-key",
           },
-          baseUrl: "https://dev.to/api/articles",
-          "body.$": "$.payload",
-        },
-      }),
-      sendApiRequestFn,
-      table,
-    });
-    const medium = new StepFunctionBranch(this, `Medium`, {
-      parsePostFn,
-      publishPayload: TaskInput.fromObject({
-        secretKey: "medium",
-        auth: {
-          location: "query",
-          key: "accessToken",
-        },
-        request: {
-          method: "POST",
-          baseUrl: "${MediumUrl}", // TODO <--
-          "body.$": "$.payload",
-        },
-      }),
-      sendApiRequestFn,
-      table,
-    });
-    const hashnode = new StepFunctionBranch(this, `Hashnode`, {
-      parsePostFn,
-      publishPayload: TaskInput.fromObject({
-        secretKey: "hashnode",
-        auth: {
-          location: "header",
-          key: "Authorization",
-        },
-        request: {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
+          request: {
+            method: "POST",
+            headers: {
+              accept: "application/vnd.forem.api-v1+json",
+            },
+            baseUrl: "https://dev.to/api/articles",
+            "body.$": "$.payload",
           },
-          baseUrl: "https://api.hashnode.com",
-          "body.$": "$.payload",
-        },
-      }),
-      sendApiRequestFn,
-      table,
-    });
+        }),
+        sendApiRequestFn,
+        table,
+      });
+      parallel.branch(devToBranch.prefixStates());
+    }
+    if (medium) {
+      const mediumBranch = new StepFunctionBranch(this, `Medium`, {
+        parsePostFn: medium.fn,
+        publishPayload: TaskInput.fromObject({
+          secretKey: "medium",
+          auth: {
+            location: "query",
+            key: "accessToken",
+          },
+          request: {
+            method: "POST",
+            baseUrl: `${medium}`,
+            "body.$": "$.payload",
+          },
+        }),
+        sendApiRequestFn,
+        table,
+      });
+      parallel.branch(mediumBranch.prefixStates());
+    }
 
-    const parallel = new Parallel(this, "TransformAndPublish")
-      .branch(devTo.prefixStates())
-      .branch(hashnode.prefixStates())
-      .branch(medium.prefixStates());
+    if (hashnode) {
+      const hashnodeBranch = new StepFunctionBranch(this, `Hashnode`, {
+        hashnodeBlogUrl: hashnode.url,
+        parsePostFn: hashnode.fn,
+        publishPayload: TaskInput.fromObject({
+          secretKey: "hashnode",
+          auth: {
+            location: "header",
+            key: "Authorization",
+          },
+          request: {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            baseUrl: "https://api.hashnode.com",
+            "body.$": "$.payload",
+          },
+        }),
+        sendApiRequestFn,
+        table,
+      });
+      parallel.branch(hashnodeBranch.prefixStates());
+    }
 
     const formatFailureCheck = new Pass(this, "FormatFailureCheck", {
       parameters: {
@@ -239,5 +272,113 @@ export class CrossPostStepFunction extends Construct {
       cause: "An error occured publishing to one or more sites",
     });
     shouldSendFailureEmail.otherwise(somethingWentWrong);
+
+    const success = new Succeed(this, `Success`);
+
+    const saveArticles = new Parallel(this, `SaveArticles`);
+    saveArticles.next(success);
+
+    const saveCatalogArticle = new DynamoPutItem(this, `SaveArticle`, {
+      table,
+      item: {
+        pk: DynamoAttributeValue.fromString(JsonPath.stringAt(`$.url`)),
+        sk: DynamoAttributeValue.fromString("article"),
+        GSI1PK: DynamoAttributeValue.fromString("article"),
+        GSI1SK: DynamoAttributeValue.fromString(
+          JsonPath.stringAt(`$$.Execution.Input.fileName`)
+        ),
+        links: DynamoAttributeValue.fromMap({
+          devUrl: DynamoAttributeValue.fromString(
+            JsonPath.stringAt(`$.devUrl`)
+          ),
+          url: DynamoAttributeValue.fromString(JsonPath.stringAt(`$.url`)),
+          mediumUrl: DynamoAttributeValue.fromString(
+            JsonPath.stringAt(`$.mediumUrl`)
+          ),
+          hashnodeUrl: DynamoAttributeValue.fromString(
+            JsonPath.stringAt(`$.hashnodeUrl`)
+          ),
+        }),
+      },
+      resultPath: JsonPath.DISCARD,
+    });
+    saveArticles.branch(saveCatalogArticle);
+
+    const updateArticleRecordSuccess = new DynamoUpdateItem(
+      this,
+      `UpdateArticleRecordSuccess`,
+      {
+        table,
+        key: {
+          pk: DynamoAttributeValue.fromString(
+            JsonPath.stringAt(
+              `States.Format('{}#{}', $$.Execution.Input.commit, $$.Execution.Input.fileName)`
+            )
+          ),
+          sk: DynamoAttributeValue.fromString("article"),
+        },
+        updateExpression: "SET #status = :status",
+        expressionAttributeNames: {
+          "#status": "status",
+        },
+        expressionAttributeValues: {
+          ":status": DynamoAttributeValue.fromString("succeeded"),
+        },
+        resultPath: JsonPath.DISCARD,
+      }
+    );
+    saveArticles.branch(updateArticleRecordSuccess);
+
+    if (adminEmail) {
+      const sendFailureEmail = new EventBridgePutEvents(
+        this,
+        "SendFailureEmail",
+        {
+          entries: [
+            {
+              detail: TaskInput.fromObject({
+                subject: "Cross Post Failed!",
+                to: `${adminEmail}`,
+                "html.$":
+                  "States.Format('<p>Republishing of your new blog post failed :(</p><p>Found file: <i>{}</i></p><p><a href=\"${ExecutionUrl}/{}\">View state machine execution</a></p>', $$.Execution.Input.fileName, $$.Execution.Id)",
+              }),
+              eventBus,
+              detailType: "Send Email",
+              source: "user.CrossPostStateMachine",
+            },
+          ],
+        }
+      );
+      shouldSendFailureEmail.when(
+        Condition.and(
+          Condition.isPresent("$$.Execution.Input.sendStatusEmail"),
+          Condition.booleanEquals("$$.Execution.Input.sendStatusEmail", true)
+        ),
+        sendFailureEmail
+      );
+      sendFailureEmail.next(somethingWentWrong);
+      const sendEmailEvent = new EventBridgePutEvents(this, "SendEmailEvent", {
+        entries: [
+          {
+            detail: TaskInput.fromObject({
+              subject: "Cross Post Successful!",
+              to: `${adminEmail}`,
+              "html.$":
+                'States.Format(\'<p>Republishing of your new blog post was successful!</p><p>Found file: <i>{}</i></p><p><b>Links</b></p><ul><li><b><a href="{}">Medium</a></b></li><li><b><a href="{}">Dev.to</a></b></li><li><b><a href="{}">Hashnode</a></b></li></ul>\', $$.Execution.Input.fileName, $.mediumUrl, $.devUrl, $.hashnodeUrl)',
+            }),
+            eventBus,
+            detailType: "Send Email",
+            source: "user.CrossPostStateMachine",
+          },
+        ],
+      });
+      sendEmailEvent.next(success);
+    }
+
+    const definition = Chain.start(getExistingArticle);
+    this.stateMachine = new StateMachine(this, `CrossPostMachine`, {
+      definition,
+      timeout: Duration.minutes(5),
+    });
   }
 }

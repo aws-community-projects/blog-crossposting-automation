@@ -1,26 +1,44 @@
-import { StackProps, Stack } from "aws-cdk-lib";
+import { StackProps, Stack, CfnOutput } from "aws-cdk-lib";
 import { EventBus, Rule } from "aws-cdk-lib/aws-events";
-import { LambdaFunction } from "aws-cdk-lib/aws-events-targets";
-import { Runtime } from "aws-cdk-lib/aws-lambda";
+import {
+  LambdaFunction,
+  SfnStateMachine,
+} from "aws-cdk-lib/aws-events-targets";
+import { FunctionUrlAuthType, Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import { join } from "path";
 import { DynamoDb } from "./dyanmo";
+import { CrossPostStepFunction } from "./step-function";
 
 export interface BlogCrosspostingAutomationStackProps extends StackProps {
-  githubOwner: string;
-  githubRepo: string;
-  amplifyProjectId: string;
-  mediumPublicationId: string;
-  mediumAuthorId: string;
-  devOrganizationId: string;
-  hashnodePublicationId: string;
-  hashnodeBlogUrl: string;
+  amplify?: {
+    amplifyProjectId: string;
+  };
   blogBaseUrl: string;
-  blogContentPath: string;
-  notificationEmail: string;
-  sendgridFromEmail: string;
+  commitTimeToleranceMinutes?: number;
+  devTo?: {
+    devOrganizationId: string;
+  };
+  email?: {
+    adminEmail: string;
+    sendgridFromEmail: string;
+  };
+  github: {
+    owner: string;
+    repo: string;
+    path: string;
+  };
+  hashnode?: {
+    hashnodePublicationId: string;
+    hashnodeBlogUrl: string;
+  };
+  medium?: {
+    mediumPublicationId?: string;
+    mediumAuthorId?: string;
+  };
+  newContentIndicator?: string;
 }
 export class BlogCrosspostingAutomationStack extends Stack {
   constructor(
@@ -29,6 +47,17 @@ export class BlogCrosspostingAutomationStack extends Stack {
     props: BlogCrosspostingAutomationStackProps
   ) {
     super(scope, id, props);
+    const {
+      amplify,
+      blogBaseUrl,
+      commitTimeToleranceMinutes,
+      devTo,
+      email,
+      github,
+      hashnode,
+      medium,
+      newContentIndicator,
+    } = props;
 
     const { table } = new DynamoDb(this, `CrosspostTable`);
 
@@ -48,10 +77,30 @@ export class BlogCrosspostingAutomationStack extends Stack {
       },
     };
 
-    const parsePostFn = new NodejsFunction(this, `ParsePostFn`, {
-      ...lambdaProps,
-      entry: join(__dirname, `../functions/parse-post.ts`),
-    });
+    let parseDevFn, parseHashnodeFn, parseMediumFn;
+    if (devTo) {
+      parseDevFn = new NodejsFunction(this, `ParseDevToFn`, {
+        ...lambdaProps,
+        entry: join(__dirname, `../functions/parse-dev-post.ts`),
+      });
+      parseDevFn.addEnvironment("BLOG_BASE_URL", blogBaseUrl);
+      parseDevFn.addEnvironment("DEV_ORG_ID", devTo.devOrganizationId);
+    }
+    if (hashnode) {
+      parseHashnodeFn = new NodejsFunction(this, `ParseHashnodeFn`, {
+        ...lambdaProps,
+        entry: join(__dirname, `../functions/parse-hashnode-post.ts`),
+      });
+      parseHashnodeFn.addEnvironment("BLOG_BASE_URL", blogBaseUrl);
+      parseHashnodeFn.addEnvironment("HASHNODE_PUBLICATION_ID", hashnode.hashnodePublicationId);
+    }
+    if (medium) {
+      parseMediumFn = new NodejsFunction(this, `ParseMediumFn`, {
+        ...lambdaProps,
+        entry: join(__dirname, `../functions/parse-medium-post.ts`),
+      });
+      parseMediumFn.addEnvironment("BLOG_BASE_URL", blogBaseUrl);
+    }
 
     const sendApiRequestFn = new NodejsFunction(this, `SendApiRequestFn`, {
       ...lambdaProps,
@@ -73,35 +122,89 @@ export class BlogCrosspostingAutomationStack extends Stack {
         entry: join(__dirname, `../functions/identify-new-content.ts`),
       }
     );
+    identifyNewContentFn.addEnvironment("OWNER", github.owner);
+    identifyNewContentFn.addEnvironment("REPO", github.repo);
+    identifyNewContentFn.addEnvironment("PATH", github.path);
+    if (commitTimeToleranceMinutes) {
+      identifyNewContentFn.addEnvironment("COMMIT_TIME_TOLERANCE_MINUTES", `${commitTimeToleranceMinutes}`);
+    }
+    if (newContentIndicator) {
+      identifyNewContentFn.addEnvironment("NEW_CONTENT_INDICATOR", newContentIndicator);
+    }
     secret.grantRead(identifyNewContentFn);
-    new Rule(this, `NewArticlesRule`, {
-      eventBus,
-      eventPattern: {
-        source: ["aws.amplify"],
-        detailType: ["Amplify Deployment Status Change"],
-        detail: {
-          appId: props.amplifyProjectId,
-          jobStatus: "SUCCEED",
-        },
-      },
-      targets: [new LambdaFunction(identifyNewContentFn)],
-    });
     eventBus.grantPutEventsTo(identifyNewContentFn);
 
-    const sendEmailFn = new NodejsFunction(this, `SendEmailFn`, {
-      ...lambdaProps,
-      entry: join(__dirname, `../functions/send-email-sendgrid.ts`),
-    });
-    secret.grantRead(sendEmailFn);
-    new Rule(this, `SendEmailRule`, {
-      eventBus,
-      eventPattern: {
-        detailType: ["Send Email"],
-      },
-      targets: [new LambdaFunction(sendEmailFn)],
-    });
+    if (amplify) {
+      new Rule(this, `NewArticlesRule`, {
+        eventBus,
+        eventPattern: {
+          source: ["aws.amplify"],
+          detailType: ["Amplify Deployment Status Change"],
+          detail: {
+            appId: amplify.amplifyProjectId,
+            jobStatus: "SUCCEED",
+          },
+        },
+        targets: [new LambdaFunction(identifyNewContentFn)],
+      });
+    } else {
+      const fnUrl = identifyNewContentFn.addFunctionUrl({
+        authType: FunctionUrlAuthType.NONE,
+        cors: {
+          allowedOrigins: ["*"],
+        },
+      });
+      new CfnOutput(this, `GithubWebhook`, { value: fnUrl.url });
+    }
 
-    // TODO convert the state machine
+    if (email) {
+      const sendEmailFn = new NodejsFunction(this, `SendEmailFn`, {
+        ...lambdaProps,
+        entry: join(__dirname, `../functions/send-email-sendgrid.ts`),
+      });
+      secret.grantRead(sendEmailFn);
+      new Rule(this, `SendEmailRule`, {
+        eventBus,
+        eventPattern: {
+          detailType: ["Send Email"],
+        },
+        targets: [new LambdaFunction(sendEmailFn)],
+      });
+    }
+
+    const { stateMachine } = new CrossPostStepFunction(
+      this,
+      `CrossPostStepFn`,
+      {
+        ...(email
+          ? {
+              adminEmail: email.adminEmail,
+            }
+          : {}),
+        ...(devTo
+          ? {
+              fn: parseDevFn,
+            }
+          : {}),
+        ...(hashnode
+          ? {
+              fn: parseHashnodeFn,
+              url: hashnode.hashnodeBlogUrl,
+            }
+          : {}),
+        ...(medium
+          ? {
+              fn: parseMediumFn,
+              url: medium.mediumPublicationId ? `https://api.medium.com/v1/publications/${medium.mediumPublicationId}/posts` : `https://api.medium.com/v1/users/${medium.mediumAuthorId}/posts`,
+            }
+          : {}),
+        eventBus,
+        sendApiRequestFn,
+        table,
+      }
+    );
+    table.grantReadWriteData(stateMachine);
+    eventBus.grantPutEventsTo(stateMachine);
 
     new Rule(this, "CrossPostMachineRule", {
       eventBus,
@@ -109,7 +212,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
         source: [`cross-post`],
         detailType: ["process-new-content"],
       },
-      // targets: [new SfnStateMachine(stateMachine, {})]
+      targets: [new SfnStateMachine(stateMachine, {})],
     });
   }
 }

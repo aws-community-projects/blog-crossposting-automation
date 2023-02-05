@@ -34,7 +34,7 @@ const initializeOctokit = async () => {
 };
 
 const getRecentCommits = async () => {
-  const timeTolerance = Number(process.env.COMMIT_TIME_TOLERANCE_MINUTES);
+  const timeTolerance = Number(process.env.COMMIT_TIME_TOLERANCE_MINUTES || 10);
   const date = new Date();
   date.setMinutes(date.getMinutes() - timeTolerance);
 
@@ -48,7 +48,7 @@ const getRecentCommits = async () => {
   const newPostCommits = result.data.filter((c) =>
     c.commit.message
       .toLowerCase()
-      .startsWith(`${process.env.NEW_CONTENT_INDICATOR}`)
+      .startsWith(`${process.env.NEW_CONTENT_INDICATOR || '[blog]'}`)
   );
   return newPostCommits.map((d) => d.sha);
 };
