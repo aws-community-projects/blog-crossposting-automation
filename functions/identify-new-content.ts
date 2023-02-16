@@ -9,7 +9,7 @@ const eb = new EventBridgeClient({});
 
 let octokit: Octokit;
 
-export const handler = async () => {
+export const handler = async (event: any) => {
   try {
     await initializeOctokit();
 
@@ -41,14 +41,16 @@ const getRecentCommits = async () => {
   const result = await octokit.rest.repos.listCommits({
     owner: `${process.env.OWNER}`,
     repo: `${process.env.REPO}`,
-    path: process.env.PATH,
+    ...(process.env.BLOG_PATH && process.env.BLOG_PATH !== "/"
+      ? { path: `${process.env.BLOG_PATH}` }
+      : {}),
     since: date.toISOString(),
   });
 
   const newPostCommits = result.data.filter((c) =>
     c.commit.message
       .toLowerCase()
-      .startsWith(`${process.env.NEW_CONTENT_INDICATOR || '[blog]'}`)
+      .startsWith(`${process.env.NEW_CONTENT_INDICATOR || "[blog]"}`)
   );
   return newPostCommits.map((d) => d.sha);
 };
@@ -62,9 +64,10 @@ const getNewContent = async (commits: string[]) => {
       ref: commits[j],
     });
 
+    const blogPath = process.env.BLOG_PATH && process.env.BLOG_PATH !== "/";
     const newFiles = commitDetail.data.files?.filter(
       (f) =>
-        f.status == "added" && f.filename.startsWith(`${process.env.PATH}/`)
+        f.status == "added" && (!blogPath || f.filename.startsWith(`${process.env.BLOG_PATH}/`))
     );
     newContent.push(
       ...(newFiles?.map((p) => {
@@ -112,6 +115,17 @@ const getContentData = async (
 
   return contentData;
 };
+
+const saveImagesToS3 = async (
+  newContent: {
+    fileName: string;
+    commit: string;
+    content: string;
+    sendStatusEmail: boolean;
+  }[]
+) => {
+  // TODO: regex for images stored in github and fetch them / store them in a public s3 bucket
+}
 
 const processNewContent = async (
   newContent: {

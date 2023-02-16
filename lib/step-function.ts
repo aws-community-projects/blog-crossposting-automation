@@ -1,6 +1,5 @@
 import { Table } from "aws-cdk-lib/aws-dynamodb";
 import {
-  Chain,
   Choice,
   Condition,
   Fail,
@@ -94,6 +93,7 @@ export class CrossPostStepFunction extends Construct {
       }
     );
     const hasArticleBeenProcessed = new Choice(this, `HasArticleBeenProcessed`);
+    getExistingArticle.next(hasArticleBeenProcessed);
     hasArticleBeenProcessed.when(
       Condition.isNotPresent("$.existingArticle.Item"),
       setArticleInProgress
@@ -109,6 +109,7 @@ export class CrossPostStepFunction extends Construct {
     const loadArticleCatalog = new CallAwsService(this, "LoadArticleCatalog", {
       service: "dynamodb",
       action: "query",
+      iamAction: "dyanamodb:Query",
       iamResources: [table.tableArn],
       parameters: {
         TableName: table.tableName,
@@ -118,12 +119,16 @@ export class CrossPostStepFunction extends Construct {
           "#GSI1PK": "GSI1PK",
         },
         ExpressionAttributeValues: {
-          ":GSI1PK": DynamoAttributeValue.fromString("article"),
+          ":GSI1PK": {
+            S: "article",
+          },
         },
       },
       resultPath: "$.catalog",
     });
+    setArticleInProgress.next(loadArticleCatalog);
     // addCatch
+    const updateFailure = new Fail(this, `UpdateFailure`);
     const updateArticleRecordFailure = new DynamoUpdateItem(
       this,
       `UpdateArticleRecordFailure`,
@@ -147,10 +152,12 @@ export class CrossPostStepFunction extends Construct {
         resultPath: JsonPath.DISCARD,
       }
     );
+    updateArticleRecordFailure.next(updateFailure);
     loadArticleCatalog.addCatch(updateArticleRecordFailure);
 
     // PARALLEL
     const parallel = new Parallel(this, "TransformAndPublish");
+    loadArticleCatalog.next(parallel);
     if (devTo) {
       const devToBranch = new StepFunctionBranch(this, `Dev`, {
         parsePostFn: devTo.fn,
@@ -237,6 +244,7 @@ export class CrossPostStepFunction extends Construct {
     });
     formatFailureCheck.next(checkForFailures);
     const didFailureOccur = new Choice(this, `DidFailureOccur`);
+    checkForFailures.next(didFailureOccur);
     const updateArticleRecordFailed = new DynamoUpdateItem(
       this,
       `UpdateArticleRecordFailed`,
@@ -261,22 +269,25 @@ export class CrossPostStepFunction extends Construct {
       }
     );
     didFailureOccur.when(
-      Condition.booleanEquals("$.existingArticle.Item.status.S", true),
+      Condition.booleanEquals("$.hasFailure", true),
       updateArticleRecordFailed
     );
-
-    const shouldSendFailureEmail = new Choice(this, `ShouldSendFailureEmail`);
-    updateArticleRecordFailed.next(shouldSendFailureEmail);
-    const somethingWentWrong = new Fail(this, `SomethingWentWrong`, {
-      error: "PublishError",
-      cause: "An error occured publishing to one or more sites",
-    });
-    shouldSendFailureEmail.otherwise(somethingWentWrong);
 
     const success = new Succeed(this, `Success`);
 
     const saveArticles = new Parallel(this, `SaveArticles`);
     saveArticles.next(success);
+
+    const formatArticle = new Pass(this, `FormatArticle`, {
+      parameters: {
+        "url.$": "$.results[0].url",
+        "devUrl.$": "$.results[0].devUrl",
+        "mediumUrl.$": "$.results[1].mediumUrl",
+        "hashnodeUrl.$": "$.results[2].hashnodeUrl",
+      },
+    });
+    didFailureOccur.otherwise(formatArticle);
+    formatArticle.next(saveArticles);
 
     const saveCatalogArticle = new DynamoPutItem(this, `SaveArticle`, {
       table,
@@ -329,7 +340,15 @@ export class CrossPostStepFunction extends Construct {
     );
     saveArticles.branch(updateArticleRecordSuccess);
 
+    const somethingWentWrong = new Fail(this, `SomethingWentWrong`, {
+      error: "PublishError",
+      cause: "An error occured publishing to one or more sites",
+    });
+
     if (adminEmail) {
+      const shouldSendFailureEmail = new Choice(this, `ShouldSendFailureEmail`);
+      updateArticleRecordFailed.next(shouldSendFailureEmail);
+      shouldSendFailureEmail.otherwise(somethingWentWrong);
       const sendFailureEmail = new EventBridgePutEvents(
         this,
         "SendFailureEmail",
@@ -373,11 +392,12 @@ export class CrossPostStepFunction extends Construct {
         ],
       });
       sendEmailEvent.next(success);
+    } else {
+      updateArticleRecordFailed.next(somethingWentWrong);
     }
 
-    const definition = Chain.start(getExistingArticle);
     this.stateMachine = new StateMachine(this, `CrossPostMachine`, {
-      definition,
+      definition: getExistingArticle,
       timeout: Duration.minutes(5),
     });
   }

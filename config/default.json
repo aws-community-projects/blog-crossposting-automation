@@ -1,9 +1,10 @@
 {
   "cdk": {
     "amplify": {
-      "amplifyProjectId": ""
+      "amplifyProjectId": "",
+      "blogBaseUrl": ""
     },
-    "blogBaseUrl": "",
+    "canonical": "amplify",
     "commitTimeToleranceMinutes": 0,
     "devTo": {
       "devOrganizationId": ""

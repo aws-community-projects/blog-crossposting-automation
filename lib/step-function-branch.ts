@@ -67,6 +67,7 @@ export class StepFunctionBranch extends StateMachineFragment {
         }),
         retryOnServiceExceptions: true,
       });
+      skipPublish.otherwise(transform);
       const updateArticleRecordFailure = new DynamoUpdateItem(
         this,
         `UpdateArticleRecordFailure`,
@@ -104,6 +105,7 @@ export class StepFunctionBranch extends StateMachineFragment {
         payload: publishPayload,
         retryOnServiceExceptions: true,
       });
+      transform.next(publish);
       publish.addCatch(updateArticleRecordFailure);
       const updateArticleRecordSuccess = new DynamoUpdateItem(
         this,
