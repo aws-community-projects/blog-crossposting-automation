@@ -19,6 +19,7 @@ import { Construct } from "constructs";
 
 export interface StepFunctionBranchProps {
   hashnodeBlogUrl?: string;
+  includeCanonical: boolean;
   parsePostFn: NodejsFunction;
   publishPayload: TaskInput;
   sendApiRequestFn: NodejsFunction;
@@ -34,6 +35,7 @@ export class StepFunctionBranch extends StateMachineFragment {
       super(scope, id);
       const {
         hashnodeBlogUrl,
+        includeCanonical,
         parsePostFn,
         publishPayload,
         sendApiRequestFn,
@@ -61,6 +63,9 @@ export class StepFunctionBranch extends StateMachineFragment {
       const transform = new LambdaInvoke(this, `Transform`, {
         lambdaFunction: parsePostFn,
         payload: TaskInput.fromObject({
+          ...(includeCanonical ? {
+            "canonical.$": `$.canonical.${format}Url`,
+          } : {}),
           "post.$": "$.content",
           "articleCatalog.$": "$.catalog.Items",
           format,

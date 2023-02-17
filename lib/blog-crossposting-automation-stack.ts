@@ -2,10 +2,9 @@ import { StackProps, Stack, CfnOutput, Duration } from "aws-cdk-lib";
 import { EventBus, Rule } from "aws-cdk-lib/aws-events";
 import {
   LambdaFunction,
-  SfnStateMachine,
 } from "aws-cdk-lib/aws-events-targets";
 import { Architecture, FunctionUrlAuthType, Runtime } from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { NodejsFunction, NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import { join } from "path";
@@ -78,9 +77,9 @@ export class BlogCrosspostingAutomationStack extends Stack {
       secretName
     );
 
-    const lambdaProps = {
+    const lambdaProps: NodejsFunctionProps = {
       architecture: Architecture.ARM_64,
-      memory: 1024,
+      memorySize: 1024,
       timeout: Duration.minutes(5),
       runtime: Runtime.NODEJS_18_X,
       environment: {
@@ -105,6 +104,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
       eventBus,
       sendApiRequestFn,
       table,
+      canonical,
     };
     if (devTo?.devOrganizationId) {
       const parseDevFn = new NodejsFunction(this, `ParseDevToFn`, {
@@ -114,7 +114,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
       parseDevFn.addEnvironment("CANONICAL", canonical);
       parseDevFn.addEnvironment("DEV_ORG_ID", devTo.devOrganizationId);
       if (amplify) {
-        parseDevFn.addEnvironment("BLOG_BASE_URL", amplify.blogBaseUrl);
+        parseDevFn.addEnvironment("AMPLIFY_BASE_URL", amplify.blogBaseUrl);
       }
       crossPostStepFunctionProps.devTo = {
         fn: parseDevFn!,
@@ -127,7 +127,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
       });
       parseHashnodeFn.addEnvironment("CANONICAL", canonical);
       if (amplify) {
-        parseHashnodeFn.addEnvironment("BLOG_BASE_URL", amplify.blogBaseUrl);
+        parseHashnodeFn.addEnvironment("AMPLIFY_BASE_URL", amplify.blogBaseUrl);
       }
       if (hashnode.hashnodePublicationId) {
         parseHashnodeFn.addEnvironment(
@@ -147,7 +147,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
       });
       parseMediumFn.addEnvironment("CANONICAL", canonical);
       if (amplify) {
-        parseMediumFn.addEnvironment("BLOG_BASE_URL", amplify.blogBaseUrl);
+        parseMediumFn.addEnvironment("AMPLIFY_BASE_URL", amplify.blogBaseUrl);
       }
       crossPostStepFunctionProps.medium = {
         fn: parseMediumFn!,
@@ -187,7 +187,6 @@ export class BlogCrosspostingAutomationStack extends Stack {
       );
     }
     secret.grantRead(identifyNewContentFn);
-    eventBus.grantPutEventsTo(identifyNewContentFn);
 
     if (amplify?.amplifyProjectId) {
       new Rule(this, `NewArticlesRule`, {
@@ -228,16 +227,8 @@ export class BlogCrosspostingAutomationStack extends Stack {
     }
 
     const { stateMachine } = new CrossPostStepFunction(this, `CrossPostStepFn`, crossPostStepFunctionProps);
+    stateMachine.grantStartExecution(identifyNewContentFn);
     table.grantReadWriteData(stateMachine);
     eventBus.grantPutEventsTo(stateMachine);
-
-    new Rule(this, "CrossPostMachineRule", {
-      eventBus,
-      eventPattern: {
-        source: [`cross-post`],
-        detailType: ["process-new-content"],
-      },
-      targets: [new SfnStateMachine(stateMachine, {})],
-    });
   }
 }

@@ -8,6 +8,7 @@ export const handler = async (state: {
   post: any;
   format: string;
   articleCatalog: any;
+  canonical?: string;
 }) => {
   const details = frontmatter(state.post);
   const links = getLinks(details.content);
@@ -50,7 +51,7 @@ const formatHashnodeData = (
       } else {
         hashnodeContent = hashnodeContent.replace(
           link[1],
-          `${process.env.BLOG_BASE_URL}${replacement.links.M.url.S}`
+          `${process.env.AMPLIFY_BASE_URL}${replacement.links.M.url.S}`
         );
       }
     }
@@ -71,9 +72,9 @@ const formatHashnodeData = (
         contentMarkdown: hashnodeContent,
         coverImageURL: postDetail.data.image,
         isRepublished: {
-          originalArticleURL: `${
-            process.env.BLOG_BASE_URL
-          }/${postDetail.data.slug.replace(/^\/|\/$/g, "")}`,
+          ...(process.env.CANONICAL === "hashnode" ? {} : {
+            originalArticleURL: process.env.AMPLIFY_BASE_URL ? `${process.env.AMPLIFY_BASE_URL}/${postDetail.data.slug.replace(/^\/|\/$/g, "")}` : ``,
+          }),
         },
         tags: [],
         subtitle: postDetail.data.description,

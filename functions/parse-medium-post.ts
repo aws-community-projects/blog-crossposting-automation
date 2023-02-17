@@ -4,7 +4,7 @@ import { getTweetUrl } from "./utils/getTweetUrl";
 
 const frontmatter = require('@github-docs/frontmatter');
 
-export const handler = async (state: { post: any; format: string; articleCatalog: any; }) => {
+export const handler = async (state: { post: any; format: string; articleCatalog: any; canonical?: string; }) => {
   const details = frontmatter(state.post);
   const links = getLinks(details.content);
   const tweets = getTweets(details.content);
@@ -29,7 +29,7 @@ const formatMediumData = (postDetail: { data: { title: any; description: any; im
       if (replacement.links.M.mediumUrl && replacement.links.M.mediumUrl.S) {
         mediumContent = mediumContent.replace(link[1], replacement.links.M.mediumUrl.S);
       } else {
-        mediumContent = mediumContent.replace(link[1], `${process.env.BLOG_BASE_URL}${replacement.links.M.url.S}`);
+        mediumContent = mediumContent.replace(link[1], `${process.env.AMPLIFY_BASE_URL}${replacement.links.M.url.S}`);
       }
     }
   }
@@ -43,7 +43,12 @@ const formatMediumData = (postDetail: { data: { title: any; description: any; im
     title: postDetail.data.title,
     contentFormat: 'markdown',
     tags: [...postDetail.data.categories, ...postDetail.data.tags],
-    canonicalUrl: `${process.env.BLOG_BASE_URL}/${postDetail.data.slug.replace(/^\/|\/$/g, '')}`,
+    ...(process.env.CANONICAL === "medium" ? {} : {
+      canonical_url: process.env.AMPLIFY_BASE_URL ? `${process.env.AMPLIFY_BASE_URL}/${postDetail.data.slug.replace(
+        /^\/|\/$/g,
+        ""
+      )}` : ``,
+    }),
     publishStatus: 'draft',
     notifyFollowers: true,
     content: mediumContent

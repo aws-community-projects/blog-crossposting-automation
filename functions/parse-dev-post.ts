@@ -8,6 +8,7 @@ export const handler = async (state: {
   post: any;
   format: string;
   articleCatalog: any;
+  canonical?: string;
 }) => {
   const details = frontmatter(state.post);
   const links = getLinks(details.content);
@@ -45,7 +46,7 @@ const formatDevData = (
       } else {
         devContent = devContent.replace(
           link[1],
-          `${process.env.BLOG_BASE_URL}${replacement.links.M.url.S}`
+          `${process.env.AMPLIFY_BASE_URL}${replacement.links.M.url.S}`
         );
       }
     }
@@ -60,10 +61,12 @@ const formatDevData = (
     title: postDetail.data.title,
     published: true,
     main_image: postDetail.data.image,
-    canonical_url: `${process.env.BLOG_BASE_URL}/${postDetail.data.slug.replace(
-      /^\/|\/$/g,
-      ""
-    )}`,
+    ...(process.env.CANONICAL === "dev" ? {} : {
+      canonical_url: process.env.AMPLIFY_BASE_URL ? `${process.env.AMPLIFY_BASE_URL}/${postDetail.data.slug.replace(
+        /^\/|\/$/g,
+        ""
+      )}` : ``,
+    }),
     description: postDetail.data.description,
     tags: [
       ...postDetail.data.categories.map((c) => c.replace(/ /g, "")),

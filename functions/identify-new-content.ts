@@ -1,12 +1,8 @@
 import { Octokit } from "octokit";
-import {
-  EventBridgeClient,
-  PutEventsCommand,
-} from "@aws-sdk/client-eventbridge";
+import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { getSecret } from "./utils/secrets";
 
-const eb = new EventBridgeClient({});
-
+const sfn = new SFNClient({});
 let octokit: Octokit;
 
 export const handler = async (event: any) => {
@@ -135,14 +131,17 @@ const processNewContent = async (
     sendStatusEmail: boolean;
   }[]
 ) => {
-  const Entries = newContent.map((content) => ({
-    Source: `cross-post`,
-    DetailType: "process-new-content",
-    Detail: JSON.stringify(content),
+  const executions = await Promise.allSettled(newContent.map(async (content) => {
+    const command = new StartExecutionCommand({
+      stateMachineArn: process.env.STATE_MACHINE_ARN,
+      input: JSON.stringify(content)
+    });
+    await sfn.send(command);
   }));
 
-  const putEventsCommand = new PutEventsCommand({
-    Entries,
-  });
-  await eb.send(putEventsCommand);
+  for (const execution of executions) {
+    if (execution.status == 'rejected') {
+      console.error(execution.reason);
+    }
+  }
 };

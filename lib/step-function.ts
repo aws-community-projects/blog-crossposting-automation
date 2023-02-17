@@ -26,6 +26,7 @@ import { Duration } from "aws-cdk-lib";
 
 export interface CrossPostStepFunctionProps {
   adminEmail?: string;
+  canonical: "dev" | "medium" | "hashnode" | "amplify";
   devTo?: {
     fn: NodejsFunction;
   };
@@ -48,6 +49,7 @@ export class CrossPostStepFunction extends Construct {
 
     const {
       adminEmail,
+      canonical,
       devTo,
       eventBus,
       hashnode,
@@ -156,10 +158,21 @@ export class CrossPostStepFunction extends Construct {
     loadArticleCatalog.addCatch(updateArticleRecordFailure);
 
     // PARALLEL
-    const parallel = new Parallel(this, "TransformAndPublish");
-    loadArticleCatalog.next(parallel);
+    const transformAndPublish = new Parallel(this, "TransformAndPublish");
+    let transformAndPublishCanonical = transformAndPublish;
+    if (canonical !== "amplify") {
+      transformAndPublishCanonical = new Parallel(this, "TransformAndPublishCanonical", {
+        resultPath: "$.canonical"
+      });
+      loadArticleCatalog.next(transformAndPublishCanonical);
+      transformAndPublishCanonical.next(transformAndPublish);
+    } else {
+      loadArticleCatalog.next(transformAndPublish);
+    }
+
     if (devTo) {
       const devToBranch = new StepFunctionBranch(this, `Dev`, {
+        includeCanonical: !(canonical === "dev" || canonical === "amplify"),
         parsePostFn: devTo.fn,
         publishPayload: TaskInput.fromObject({
           secretKey: "dev",
@@ -179,10 +192,15 @@ export class CrossPostStepFunction extends Construct {
         sendApiRequestFn,
         table,
       });
-      parallel.branch(devToBranch.prefixStates());
+      if (canonical === "dev") {
+        transformAndPublishCanonical.branch(devToBranch.prefixStates());
+      } else {
+        transformAndPublish.branch(devToBranch.prefixStates());
+      }
     }
     if (medium) {
       const mediumBranch = new StepFunctionBranch(this, `Medium`, {
+        includeCanonical: !(canonical === "medium" || canonical === "amplify"),
         parsePostFn: medium.fn,
         publishPayload: TaskInput.fromObject({
           secretKey: "medium",
@@ -199,11 +217,16 @@ export class CrossPostStepFunction extends Construct {
         sendApiRequestFn,
         table,
       });
-      parallel.branch(mediumBranch.prefixStates());
+      if (canonical === "medium") {
+        transformAndPublishCanonical.branch(mediumBranch.prefixStates());
+      } else {
+        transformAndPublish.branch(mediumBranch.prefixStates());
+      }
     }
 
     if (hashnode) {
       const hashnodeBranch = new StepFunctionBranch(this, `Hashnode`, {
+        includeCanonical: !(canonical === "hashnode" || canonical === "amplify"),
         hashnodeBlogUrl: hashnode.url,
         parsePostFn: hashnode.fn,
         publishPayload: TaskInput.fromObject({
@@ -224,7 +247,11 @@ export class CrossPostStepFunction extends Construct {
         sendApiRequestFn,
         table,
       });
-      parallel.branch(hashnodeBranch.prefixStates());
+      if (canonical === "hashnode") {
+        transformAndPublishCanonical.branch(hashnodeBranch.prefixStates());
+      } else {
+        transformAndPublish.branch(hashnodeBranch.prefixStates());
+      }
     }
 
     const formatFailureCheck = new Pass(this, "FormatFailureCheck", {
@@ -235,7 +262,7 @@ export class CrossPostStepFunction extends Construct {
         },
       },
     });
-    parallel.next(formatFailureCheck);
+    transformAndPublish.next(formatFailureCheck);
     const checkForFailures = new Pass(this, `CheckForFailures`, {
       parameters: {
         "results.$": "$.results",
