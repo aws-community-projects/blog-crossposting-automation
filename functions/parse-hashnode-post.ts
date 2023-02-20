@@ -71,11 +71,17 @@ const formatHashnodeData = (
         title: postDetail.data.title,
         contentMarkdown: hashnodeContent,
         coverImageURL: postDetail.data.image,
-        isRepublished: {
-          ...(process.env.CANONICAL === "hashnode" ? {} : {
-            originalArticleURL: process.env.AMPLIFY_BASE_URL ? `${process.env.AMPLIFY_BASE_URL}/${postDetail.data.slug.replace(/^\/|\/$/g, "")}` : ``,
-          }),
-        },
+        ...(process.env.CANONICAL === "hashnode"
+          ? {}
+          : {
+              isRepublished: {
+                originalArticleURL: process.env.AMPLIFY_BASE_URL
+                  ? `${
+                      process.env.AMPLIFY_BASE_URL
+                    }/${postDetail.data.slug.replace(/^\/|\/$/g, "")}`
+                  : `${process.env.CANONICAL}`,
+              },
+            }),
         tags: [],
         subtitle: postDetail.data.description,
       },

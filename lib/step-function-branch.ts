@@ -19,7 +19,7 @@ import { Construct } from "constructs";
 
 export interface StepFunctionBranchProps {
   hashnodeBlogUrl?: string;
-  includeCanonical: boolean;
+  canonical?: string;
   parsePostFn: NodejsFunction;
   publishPayload: TaskInput;
   sendApiRequestFn: NodejsFunction;
@@ -35,7 +35,7 @@ export class StepFunctionBranch extends StateMachineFragment {
       super(scope, id);
       const {
         hashnodeBlogUrl,
-        includeCanonical,
+        canonical,
         parsePostFn,
         publishPayload,
         sendApiRequestFn,
@@ -63,14 +63,15 @@ export class StepFunctionBranch extends StateMachineFragment {
       const transform = new LambdaInvoke(this, `Transform`, {
         lambdaFunction: parsePostFn,
         payload: TaskInput.fromObject({
-          ...(includeCanonical ? {
-            "canonical.$": `$.canonical.${format}Url`,
+          ...(canonical ? {
+            "canonical.$": `$.canonical[0].${canonical}Url`,
           } : {}),
           "post.$": "$.content",
           "articleCatalog.$": "$.catalog.Items",
           format,
         }),
         retryOnServiceExceptions: true,
+        outputPath: '$.Payload',
       });
       skipPublish.otherwise(transform);
       const updateArticleRecordFailure = new DynamoUpdateItem(
@@ -109,6 +110,7 @@ export class StepFunctionBranch extends StateMachineFragment {
         lambdaFunction: sendApiRequestFn,
         payload: publishPayload,
         retryOnServiceExceptions: true,
+        resultPath: '$.result',
       });
       transform.next(publish);
       publish.addCatch(updateArticleRecordFailure);
@@ -131,7 +133,7 @@ export class StepFunctionBranch extends StateMachineFragment {
             "#url": "url",
           },
           expressionAttributeValues: {
-            [`:${format}`]: DynamoAttributeValue.fromMap({
+            ':format': DynamoAttributeValue.fromMap({
               status: DynamoAttributeValue.fromString("succeeded"),
               [`${format}Url`]: DynamoAttributeValue.fromString(
                 format === "hashnode"

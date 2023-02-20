@@ -20,6 +20,7 @@ export const handler = async (state: { secretKey: any; request: { method: any; b
       }
     };
   } else {
+    console.log(JSON.stringify({ config, state }, null, 2));
     const response = await axios.request(config);
     return response.data;
   }

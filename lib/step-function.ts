@@ -65,6 +65,7 @@ export class CrossPostStepFunction extends Construct {
         ),
         sk: DynamoAttributeValue.fromString("article"),
       },
+      resultPath: "$.existingArticle",
     });
     const setArticleInProgress = new DynamoUpdateItem(
       this,
@@ -158,21 +159,31 @@ export class CrossPostStepFunction extends Construct {
     loadArticleCatalog.addCatch(updateArticleRecordFailure);
 
     // PARALLEL
-    const transformAndPublish = new Parallel(this, "TransformAndPublish");
+    const transformAndPublish = new Parallel(this, "TransformAndPublish", {
+      resultPath: "$.transform",
+    });
     let transformAndPublishCanonical = transformAndPublish;
     if (canonical !== "amplify") {
-      transformAndPublishCanonical = new Parallel(this, "TransformAndPublishCanonical", {
-        resultPath: "$.canonical"
-      });
+      transformAndPublishCanonical = new Parallel(
+        this,
+        "TransformAndPublishCanonical",
+        {
+          resultPath: "$.canonical",
+        }
+      );
+      transformAndPublishCanonical.addCatch(new Fail(this, `CanonicalFailed`));
       loadArticleCatalog.next(transformAndPublishCanonical);
       transformAndPublishCanonical.next(transformAndPublish);
     } else {
       loadArticleCatalog.next(transformAndPublish);
     }
 
+    const parallelResults: string[] = [];
     if (devTo) {
       const devToBranch = new StepFunctionBranch(this, `Dev`, {
-        includeCanonical: !(canonical === "dev" || canonical === "amplify"),
+        ...(canonical === "dev" || canonical === "amplify"
+          ? {}
+          : { canonical }),
         parsePostFn: devTo.fn,
         publishPayload: TaskInput.fromObject({
           secretKey: "dev",
@@ -196,11 +207,14 @@ export class CrossPostStepFunction extends Construct {
         transformAndPublishCanonical.branch(devToBranch.prefixStates());
       } else {
         transformAndPublish.branch(devToBranch.prefixStates());
+        parallelResults.push("dev");
       }
     }
     if (medium) {
       const mediumBranch = new StepFunctionBranch(this, `Medium`, {
-        includeCanonical: !(canonical === "medium" || canonical === "amplify"),
+        ...(canonical === "medium" || canonical === "amplify"
+          ? {}
+          : { canonical }),
         parsePostFn: medium.fn,
         publishPayload: TaskInput.fromObject({
           secretKey: "medium",
@@ -221,12 +235,15 @@ export class CrossPostStepFunction extends Construct {
         transformAndPublishCanonical.branch(mediumBranch.prefixStates());
       } else {
         transformAndPublish.branch(mediumBranch.prefixStates());
+        parallelResults.push("medium");
       }
     }
 
     if (hashnode) {
       const hashnodeBranch = new StepFunctionBranch(this, `Hashnode`, {
-        includeCanonical: !(canonical === "hashnode" || canonical === "amplify"),
+        ...(canonical === "hashnode" || canonical === "amplify"
+          ? {}
+          : { canonical }),
         hashnodeBlogUrl: hashnode.url,
         parsePostFn: hashnode.fn,
         publishPayload: TaskInput.fromObject({
@@ -251,11 +268,13 @@ export class CrossPostStepFunction extends Construct {
         transformAndPublishCanonical.branch(hashnodeBranch.prefixStates());
       } else {
         transformAndPublish.branch(hashnodeBranch.prefixStates());
+        parallelResults.push("hashnode");
       }
     }
 
     const formatFailureCheck = new Pass(this, "FormatFailureCheck", {
       parameters: {
+        "canonical.$": "$.canonical[0]",
         "results.$": "$.transform",
         failureFormat: {
           success: false,
@@ -265,6 +284,7 @@ export class CrossPostStepFunction extends Construct {
     transformAndPublish.next(formatFailureCheck);
     const checkForFailures = new Pass(this, `CheckForFailures`, {
       parameters: {
+        "canonical.$": "$.canonical",
         "results.$": "$.results",
         "hasFailure.$": "States.ArrayContains($.results, $.failureFormat)",
       },
@@ -308,9 +328,14 @@ export class CrossPostStepFunction extends Construct {
     const formatArticle = new Pass(this, `FormatArticle`, {
       parameters: {
         "url.$": "$.results[0].url",
-        "devUrl.$": "$.results[0].devUrl",
-        "mediumUrl.$": "$.results[1].mediumUrl",
-        "hashnodeUrl.$": "$.results[2].hashnodeUrl",
+        ...(canonical !== "amplify"
+          ? {
+              [`${canonical}Url.$`]: `$.canonical.${canonical}Url`,
+            }
+          : {}),
+        ...parallelResults.reduce((p, c, ind) => {
+          return { ...p, [`${c}Url.$`]: `$.results[${ind}].${c}Url` };
+        }, {} as Record<string, string>),
       },
     });
     didFailureOccur.otherwise(formatArticle);
@@ -326,16 +351,28 @@ export class CrossPostStepFunction extends Construct {
           JsonPath.stringAt(`$$.Execution.Input.fileName`)
         ),
         links: DynamoAttributeValue.fromMap({
-          devUrl: DynamoAttributeValue.fromString(
-            JsonPath.stringAt(`$.devUrl`)
-          ),
+          ...(devTo
+            ? {
+                devUrl: DynamoAttributeValue.fromString(
+                  JsonPath.stringAt(`$.devUrl`)
+                ),
+              }
+            : {}),
+          ...(hashnode
+            ? {
+                hashnodeUrl: DynamoAttributeValue.fromString(
+                  JsonPath.stringAt(`$.hashnodeUrl`)
+                ),
+              }
+            : {}),
+          ...(medium
+            ? {
+                mediumUrl: DynamoAttributeValue.fromString(
+                  JsonPath.stringAt(`$.mediumUrl`)
+                ),
+              }
+            : {}),
           url: DynamoAttributeValue.fromString(JsonPath.stringAt(`$.url`)),
-          mediumUrl: DynamoAttributeValue.fromString(
-            JsonPath.stringAt(`$.mediumUrl`)
-          ),
-          hashnodeUrl: DynamoAttributeValue.fromString(
-            JsonPath.stringAt(`$.hashnodeUrl`)
-          ),
         }),
       },
       resultPath: JsonPath.DISCARD,

@@ -65,7 +65,7 @@ const formatDevData = (
       canonical_url: process.env.AMPLIFY_BASE_URL ? `${process.env.AMPLIFY_BASE_URL}/${postDetail.data.slug.replace(
         /^\/|\/$/g,
         ""
-      )}` : ``,
+      )}` : `${process.env.CANONICAL}`,
     }),
     description: postDetail.data.description,
     tags: [

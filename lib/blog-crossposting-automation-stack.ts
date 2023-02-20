@@ -1,10 +1,11 @@
-import { StackProps, Stack, CfnOutput, Duration } from "aws-cdk-lib";
+import { StackProps, Stack, CfnOutput, Duration, RemovalPolicy } from "aws-cdk-lib";
 import { EventBus, Rule } from "aws-cdk-lib/aws-events";
 import {
   LambdaFunction,
 } from "aws-cdk-lib/aws-events-targets";
 import { Architecture, FunctionUrlAuthType, Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction, NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Bucket } from "aws-cdk-lib/aws-s3";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import { join } from "path";
@@ -19,7 +20,6 @@ export interface BlogCrosspostingAutomationStackProps extends StackProps {
     amplifyProjectId: string;
     blogBaseUrl: string;
   };
-  // TODO: properly handle canonical urls for non-amplify blogs
   canonical: "dev" | "medium" | "hashnode" | "amplify";
   commitTimeToleranceMinutes?: number;
   devTo?: {
@@ -163,6 +163,12 @@ export class BlogCrosspostingAutomationStack extends Stack {
     });
     table.grantWriteData(loadCrossPostsFn);
 
+    const mediaBucket = new Bucket(this, `BlogPostMediaBucket`, {
+      autoDeleteObjects: true,
+      publicReadAccess: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
     const identifyNewContentFn = new NodejsFunction(
       this,
       `IdentifyNewContentFn`,
@@ -174,6 +180,8 @@ export class BlogCrosspostingAutomationStack extends Stack {
     identifyNewContentFn.addEnvironment("OWNER", github.owner);
     identifyNewContentFn.addEnvironment("REPO", github.repo);
     identifyNewContentFn.addEnvironment("BLOG_PATH", github.path);
+    identifyNewContentFn.addEnvironment("MEDIA_BUCKET", mediaBucket.bucketName);
+    mediaBucket.grantReadWrite(identifyNewContentFn);
     if (commitTimeToleranceMinutes) {
       identifyNewContentFn.addEnvironment(
         "COMMIT_TIME_TOLERANCE_MINUTES",
@@ -228,6 +236,7 @@ export class BlogCrosspostingAutomationStack extends Stack {
 
     const { stateMachine } = new CrossPostStepFunction(this, `CrossPostStepFn`, crossPostStepFunctionProps);
     stateMachine.grantStartExecution(identifyNewContentFn);
+    identifyNewContentFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
     table.grantReadWriteData(stateMachine);
     eventBus.grantPutEventsTo(stateMachine);
   }
