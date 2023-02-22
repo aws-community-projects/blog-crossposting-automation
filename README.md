@@ -6,7 +6,8 @@ This solution will hook into your blog creation process and automatically cross-
 
 Deploy into your AWS account and type away!
 
-For a full summary of this solution [please refer to this blog post](https://www.readysetcloud.io/blog/allen.helton/how-i-built-a-serverless-automation-to-cross-post-my-blogs/) by [Allen Helton](https://twitter.com/allenheltondev).
+For a full summary of this solution [please refer to this blog post](https://www.readysetcloud.io/blog/allen.helton/how-i-built-a-serverless-automation-to-cross-post-my-blogs/) by [Allen Helton](https://twitter.com/allenheltondev)
+and the [CDK-ification of it here](https://matt.martz.codes/improving-a-serverless-app-to-cross-post-blogs) by [Matt Martz](https://awscommunity.social/@martzcodes).
 
 ## Prerequisites
 
@@ -14,27 +15,37 @@ For cross-posts to work successfully, there are a few prereqs that must be met i
 
 * Your blog post must be written in [markdown](https://en.wikipedia.org/wiki/Markdown).
 * Content is checked into a repository in GitHub
-* You have an application in [AWS Amplify](https://aws.amazon.com/amplify/) that has a runnable CI pipeline
 * Blog posts have front matter in the format outlined in the [Blog Metadata](#blog-metadata) section
+
+Optionally, you can also publish via an application in [AWS Amplify](https://aws.amazon.com/amplify/) that has a runnable CI pipeline
 
 *Note - it is highly recommended you host your blog on your own site. This guarantees you own your content and prevents accidental loss if your favorite platform goes down or has an incident. It also enables [easy canonification](https://support.google.com/webmasters/answer/10347851) of your content when it is cross posted so it ranks higher in search engine results. For a step by step guide on hosting your own blog for free, please [reference this post](https://www.readysetcloud.io/blog/allen.helton/how-to-build-your-blog-with-aws-and-hugo/).*
 
 ## How It Works
 
-![](/docs/workflow.png)
+![](/docs/github-workflow.png)
 
 The cross posting process is outlined below.
 
 1. Completed blog post written in markdown is committed to main branch
-2. AWS Amplify CI pipeline picks up changes and runs build
-3. On success, Amplify publishes a `Amplify Deployment Status Change` event to EventBridge, triggering a Lambda function deployed in this stack
-4. The function uses your GitHub PAT to identify and load the blog post content and pass it into a Step Function workflow
-5. The workflow will do an idempotency check, and if it's ok to continue will transform and publish to Medium, Hashnode, and Dev.to in parallel
-6. After publish is complete, the workflow checks if there were any failures.
+2. Either Amplify's Event or a GitHub webhook triggers a lambda to identify content
+3. The function uses your GitHub PAT to identify and load the blog post content and pass it into a Step Function workflow
+4. The workflow will do an idempotency check, and if it's ok to continue will transform and publish to Medium, Hashnode, and Dev.to in parallel
+5. After publish is complete, the workflow checks if there were any failures.
   * If there was a failure, it sends an email with a link to the execution for debugging
   * On success, it sends an email with links to the published content and updates the idempotency record and article catalog
 
 *Note - If you do not provide a SendGrid API key, you will not receive email status updates*
+
+### Without Amplify
+
+For Step 2 above (Without Amplify), the content-identification lambda creates a function URL.  This function URL is added to the GitHub Repo where the blog content lives as a webhook.  On push events to the repo the lambda is triggered and it uses a Personal Access Token to fetch files from the repo and detect / upload content to S3.
+
+### With Amplify
+
+![](/docs/workflow.png)
+
+For Step 2 above (With Amplify), the AWS Amplify CI pipeline picks up changes and runs build. On success, Amplify publishes a `Amplify Deployment Status Change` event to EventBridge, triggering a Lambda function deployed in this stack
 
 ## Platforms
 
@@ -50,38 +61,44 @@ Optionally, you can publish straight to publications on each of the platforms. I
 
 ## Deployment
 
-The solution is built using AWS SAM. To deploy the resources into the cloud you must install the [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
+The solution is built using AWS CDK.  Get ready by copying `./config/default.json` to `./config/local.json` and adding in the appropriate fields (and removing ones you dont need).
 
-Once installed, run the following commands in the root folder of the solution.
+Here is an example:
 
-```bash
-sam build --parallel
-sam deploy --guided
+```json
+{
+  "cdk": {
+    "canonical": "hashnode",
+    "commitTimeToleranceMinutes": 0,
+    "devTo": {
+      "devOrganizationId": "1234"
+    },
+    "github": {
+      "owner": "martzcodes",
+      "repo": "blog-crossposts",
+      "path": "/"
+    },
+    "hashnode": {
+      "hashnodePublicationId": "asdf1234",
+      "hashnodeBlogUrl": "https://matt.martz.codes"
+    }
+  }
+}
+
 ```
 
-This will walk you through deployment, prompting you for all the parameters necessary for proper use. Below are the parameters you must fill out on deploy.
+In this example, since there isn't an AWS Amplify blog I chose to use hashnode as my "Original" article source.  Articles will first be posted there and then dev.to will set the Canonical URL as being from Hashnode.
 
-|Parameter|Description|Required|
-|---------|-----------|--------|
-|TableName|Name of the DynamoDB table to create|No|
-|GSI1|Name of the GSI on the DDB table|No|
-|GitHubPAT|Personal Access Token to load newsletter content from your repository|Yes|
-|GitHubOwner|The GitHub user name that owns the repository for your content|Yes|
-|GitHubRepo|The repository name that contains your content|Yes|
-|AmplifyProjectId|Identifier of the Amplify project that builds your newsletter|Yes|
-|MediumApiKey|API key used to manipulate data in your Medium account|Yes|
-|MediumPublicationId|Identifier of the publication you wish to submit to on Medium|No|
-|MediumAuthorId|Identifier of your user on Medium|Yes if `MediumPublicationId` is not provided|
-|DevApiKey|API key used to manipulate data in your Dev.to account|Yes|
-|DevOrganizationId|Identifier of the organization you wish to submit to on Dev.to|No|
-|HashnodeApiKey|API key used to manipulate data in your Hashnode account|Yes|
-|HashnodePublicationId|Identifier for your blog publication on Hashnode|Yes|
-|HashnodeBlogUrl|Base url of your blog hosted in Hashnode|Yes|
-|BlogBaseUrl|Vase url of your blog on your personal site|Yes|
-|BlogContentPath|Relative path from the root directory to the blog content folder in your GitHub repo|Yes|
-|SendgridApiKey|Api Key of the SendGrid account that will send the status report when cross-posting is complete|No|
-|NotificationEmail|Email address to notify when cross posting is complete|No|
-|SendgridFromEmail|Email address for SendGrid that sends you the status email|No|
+Once you have the config done...
+
+```bash
+npm install
+npx cdk deploy
+```
+
+After the first deploy a Secret called `CrosspostSecrets` will be created in AWS Secrets Manager.  Go there in the console and paste in the secrets that you've generated.
+
+![](./docs/secrets.png)
 
 ## Notification Emails
 
@@ -120,11 +137,17 @@ slug: /my-first-blog
 |-----|-----------|---------|
 |title|Title of the blog issue |Yes|
 |description| Brief summary of article. This shows up on Hashnode and Medium and is used in SEO previews|Yes|
-|image|Link to the hero image for your article|Yes|
+|image|Link to the hero image for your article|No|
 |image_attribution|Any attribution text needed for your hero image|No|
 |categories|Array of categories. This will be used as tags for Dev and Medium|No|
 |tags|Array of tags. Also used as tags for Dev and Medium|No|
 |slug|Relative url of your post. Used in the article catalog|Yes|
+
+## Image Uploads to a Public S3 Bucket (GitHub Only)
+
+When NOT using Amplify and using private GitHub repos as your article source, the identify-content lambda will automatically parse out `![](imagehere)` style image embeds and upload the images to a public S3 bucket.  It will also re-write the content to use those public S3-based images.
+
+***CORS is not set up for the S3 Bucket... though that could be easily added***
 
 ## Article Catalog
 
@@ -181,11 +204,16 @@ Below are a list of known limitations:
 
 * Your content must be written in Markdown with front matter describing the blog post.
 * Content must be hosted in GitHub.
-* You are required to post to Dev.to, Medium, and Hashnode. You cannot pick and choose which platforms you want to use.
 * Only Hugo style Twitter embeds are supported. Embeds for other content will not work.
-* This process is triggered on a successful build of an AWS Amplify project. Other triggers are not supported (but can easily be modified to add them).
+* This process is triggered on a successful build of an AWS Amplify project OR a GitHub Webhook. Other triggers are not supported (but can easily be modified to add them).
 * Notifications are limited to sending emails in SendGrid.
+
+### Limitations Addressed via Contributions
+
+* You are required to post to Dev.to, Medium, and Hashnode. You cannot pick and choose which platforms you want to use.
+* This process is triggered on a successful build of an AWS Amplify project.
 * The only way to deploy the solution is with AWS SAM.
+
 
 ## Contributions
 
