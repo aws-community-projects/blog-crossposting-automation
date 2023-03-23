@@ -37,7 +37,7 @@ const getRecentCommits = async () => {
   const result = await octokit.rest.repos.listCommits({
     owner: process.env.OWNER,
     repo: process.env.REPO,
-    path: process.env.PATH,
+    path: process.env.CONTENT_PATH,
     since: date.toISOString()
   });
 
@@ -53,7 +53,7 @@ const getNewContent = async (commits) => {
       ref: commit
     });
 
-    const newFiles = commitDetail.data.files.filter(f => f.status == 'added' && f.filename.startsWith(`${process.env.PATH}/`));
+    const newFiles = commitDetail.data.files.filter(f => f.status == 'added' && f.filename.startsWith(`${process.env.CONTENT_PATH}/`));
     return newFiles.map(p => {
       return {
         fileName: p.filename,

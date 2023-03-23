@@ -216,7 +216,7 @@ Resources:
           REPO: !Ref GitHubRepo
           COMMIT_TIME_TOLERANCE_MINUTES: 10
           STATE_MACHINE_ARN: !Ref CrossPostStateMachine
-          PATH: !Ref BlogContentPath
+          CONTENT_PATH: !Ref BlogContentPath
           NEW_CONTENT_INDICATOR: "[blog]"
           SEND_STATUS_EMAIL: !If [ShouldSendStatusEmail, 'true', 'false']
       Events:

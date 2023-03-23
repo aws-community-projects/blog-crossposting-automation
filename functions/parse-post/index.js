@@ -114,6 +114,9 @@ const formatHashnodeData = (postDetail, articleCatalog, links, tweets) => {
       publicationId: process.env.HASHNODE_PUBLICATION_ID,
       input: {
         title: postDetail.data.title,
+        isPartOfPublication: {
+          publicationId: process.env.HASHNODE_PUBLICATION_ID
+        },
         contentMarkdown: hashnodeContent,
         coverImageURL: postDetail.data.image,
         isRepublished: {
