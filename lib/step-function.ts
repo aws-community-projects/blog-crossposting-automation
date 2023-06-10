@@ -439,7 +439,6 @@ export class CrossPostStepFunction extends Construct {
         ),
         sendFailureEmail
       );
-      sendFailureEmail.next(somethingWentWrong);
       const sendEmailEvent = new EventBridgePutEvents(this, "SendEmailEvent", {
         entries: [
           {
@@ -455,6 +454,7 @@ export class CrossPostStepFunction extends Construct {
           },
         ],
       });
+      sendFailureEmail.next(sendEmailEvent);
       sendEmailEvent.next(success);
     } else {
       updateArticleRecordFailed.next(somethingWentWrong);
