@@ -5,7 +5,7 @@ import {
 } from "aws-cdk-lib/aws-events-targets";
 import { Architecture, FunctionUrlAuthType, Runtime } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction, NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
-import { Bucket } from "aws-cdk-lib/aws-s3";
+import { BlockPublicAccess, Bucket } from "aws-cdk-lib/aws-s3";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 import { join } from "path";
@@ -167,6 +167,12 @@ export class BlogCrosspostingAutomationStack extends Stack {
       autoDeleteObjects: true,
       publicReadAccess: true,
       removalPolicy: RemovalPolicy.DESTROY,
+      blockPublicAccess: new BlockPublicAccess({
+        blockPublicAcls: false,
+        ignorePublicAcls: false,
+        blockPublicPolicy: false,
+        restrictPublicBuckets: false,
+      }),
     });
 
     const identifyNewContentFn = new NodejsFunction(
