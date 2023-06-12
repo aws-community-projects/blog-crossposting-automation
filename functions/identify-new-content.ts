@@ -46,11 +46,11 @@ export const handler = async (event: any) => {
           },
           [] as { fileName: string; commit: string }[]
         );
-      } else {
-        const recentCommits = await getRecentCommits();
-        if (recentCommits.length) {
-          newContent = await getNewContent(recentCommits);
-        }
+      }
+    } else {
+      const recentCommits = await getRecentCommits();
+      if (recentCommits.length) {
+        newContent = await getNewContent(recentCommits);
       }
     }
     if (newContent.length) {
