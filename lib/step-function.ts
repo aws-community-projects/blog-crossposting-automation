@@ -224,7 +224,7 @@ export class CrossPostStepFunction extends Construct {
           },
           request: {
             method: "POST",
-            baseUrl: `${medium}`,
+            baseUrl: `${medium.url}`,
             "body.$": "$.payload",
           },
         }),
