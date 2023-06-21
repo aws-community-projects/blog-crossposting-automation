@@ -1,3 +1,5 @@
 node_modules/
 .aws-sam/
 samconfig.toml
+local.json
+cdk.out
